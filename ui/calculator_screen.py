@@ -57,8 +57,8 @@ class CalculatorScreen(QWidget):
     # -- ingredient dropdown -------------------------------------------------
 
     def refresh_ingredient_choices(self):
-        """Re-pull the saved ingredient list. Call this whenever this screen becomes visible,
-        since ingredients may have changed on the Ingredient Manager screen."""
+        # Re-pull the saved ingredient list. Call this whenever this screen becomes visible,
+        # since ingredients may have changed on the Ingredient Manager screen.
         self.ingredient_combo.clear()
         for ingredient in ingredient_repository.get_all_ingredients():
             label = f"{ingredient.name} ({ingredient.unit})"

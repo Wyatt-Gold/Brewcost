@@ -1,4 +1,4 @@
-"""Entry point: creates the app, sets up the database, opens the main window."""
+# Entry point: creates the app, sets up the database, opens the main window.
 
 import sys
 
