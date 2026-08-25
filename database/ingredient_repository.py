@@ -9,6 +9,8 @@ from database.connection import get_connection, load_sql
 class Ingredient:
     id: int
     name: str
+    brand: str
+    category_id: int
     category: str
     cost_per_unit: float
     unit: str
@@ -18,16 +20,18 @@ class Ingredient:
         return cls(
             id=row["id"],
             name=row["name"],
+            brand=row["brand"],
+            category_id=row["category_id"],
             category=row["category"],
             cost_per_unit=row["cost_per_unit"],
             unit=row["unit"],
         )
 
 # Add a new ingredient to the database and return its ID.
-def add_ingredient(name, category, cost_per_unit, unit):
+def add_ingredient(name, brand, category_id, cost_per_unit, unit):
     connection = get_connection()
     sql = load_sql("ingredients/insert.sql")
-    cursor = connection.execute(sql, (name, category, cost_per_unit, unit))
+    cursor = connection.execute(sql, (name, brand, category_id, cost_per_unit, unit))
     connection.commit()
     new_id = cursor.lastrowid
     connection.close()
@@ -42,10 +46,10 @@ def get_all_ingredients():
     return [Ingredient.from_row(row) for row in rows]
 
 # Update an existing ingredient's details in the database.
-def update_ingredient(ingredient_id, name, category, cost_per_unit, unit):
+def update_ingredient(ingredient_id, name, brand, category_id, cost_per_unit, unit):
     connection = get_connection()
     sql = load_sql("ingredients/update.sql")
-    connection.execute(sql, (name, category, cost_per_unit, unit, ingredient_id))
+    connection.execute(sql, (name, brand, category_id, cost_per_unit, unit, ingredient_id))
     connection.commit()
     connection.close()
 

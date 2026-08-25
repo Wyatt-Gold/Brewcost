@@ -1,1 +1,1 @@
-INSERT INTO ingredients (name, category, cost_per_unit, unit) VALUES (?, ?, ?, ?)
+INSERT INTO ingredients (name, brand, category_id, cost_per_unit, unit) VALUES (?, ?, ?, ?, ?)

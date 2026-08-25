@@ -1,8 +1,10 @@
 # Ingredient screen: lets the user add ingredients to the database, edit them, and delete them.
 
 from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QFormLayout,
     QHBoxLayout,
@@ -16,12 +18,42 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from database import ingredient_repository
+from database import categories_repository, ingredient_repository
 
-COLUMNS = ["Name", "Category", "Cost per Unit", "Unit"]
+DEFAULT_CATEGORY = "Syrup"
+COST_LABEL = "Cost/Unit ($)"
+COLUMNS = ["Name", "Brand", "Category", COST_LABEL, "Unit"]
 
 # Opacity of the dimming overlay shown behind the add/update popup.
 SHADE_OPACITY = "rgba(0, 0, 0, 90)"
+
+MAX_TEXT_LENGTH = 100
+VALID_BORDER = "border: 1px solid #2e7d32;"
+INVALID_BORDER = "border: 1px solid #c62828;"
+
+
+class CurrencyLineEdit(QLineEdit):
+    # Plain numeric entry while focused; reformats to "$X.XX" once the user
+    # clicks/tabs away, so the field always displays a real dollar amount.
+    def __init__(self):
+        super().__init__()
+        self.setValidator(QDoubleValidator(0.0, 1_000_000, 2))
+
+    def raw_text(self):
+        return self.text().lstrip("$").strip()
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.setText(self.raw_text())
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        text = self.raw_text()
+        try:
+            value = float(text)
+        except ValueError:
+            return
+        self.setText(f"${value:.2f}")
 
 
 class IngredientFormDialog(QDialog):
@@ -34,18 +66,35 @@ class IngredientFormDialog(QDialog):
         self._anchor.installEventFilter(self)
 
         self.name_input = QLineEdit()
-        self.category_input = QLineEdit()
-        self.cost_input = QLineEdit()
+        self.brand_input = QLineEdit()
+        self.category_input = QComboBox()
+        for category in categories_repository.get_all_categories():
+            self.category_input.addItem(category.name, category.id)
+        self.cost_input = CurrencyLineEdit()
         self.unit_input = QLineEdit()
 
-        self.name_input.textChanged.connect(self._update_confirm_enabled)
-        self.cost_input.textChanged.connect(self._update_confirm_enabled)
-        self.unit_input.textChanged.connect(self._update_confirm_enabled)
+        self.name_input.setMaxLength(MAX_TEXT_LENGTH)
+        self.brand_input.setMaxLength(MAX_TEXT_LENGTH)
+        self.unit_input.setMaxLength(MAX_TEXT_LENGTH)
+
+        self._fields = {
+            "name": self.name_input,
+            "brand": self.brand_input,
+            "unit": self.unit_input,
+            "cost": self.cost_input,
+        }
+        self._touched = set()
+
+        self.name_input.textChanged.connect(lambda: self._handle_field_changed("name"))
+        self.brand_input.textChanged.connect(lambda: self._handle_field_changed("brand"))
+        self.unit_input.textChanged.connect(lambda: self._handle_field_changed("unit"))
+        self.cost_input.textChanged.connect(lambda: self._handle_field_changed("cost"))
 
         form = QFormLayout()
         form.addRow("Name", self.name_input)
+        form.addRow("Brand", self.brand_input)
         form.addRow("Category", self.category_input)
-        form.addRow("Cost per Unit", self.cost_input)
+        form.addRow(COST_LABEL, self.cost_input)
         form.addRow("Unit", self.unit_input)
 
         self.confirm_button = QPushButton("Add")
@@ -63,41 +112,55 @@ class IngredientFormDialog(QDialog):
         layout.addLayout(button_row)
         self.setLayout(layout)
 
-    def set_mode(self, mode, name="", category="", cost="", unit=""):
+    def set_mode(self, mode, name="", brand="", category_id=None, cost="", unit=""):
         self.mode = mode
         self.setWindowTitle("Update Ingredient" if mode == "update" else "Add Ingredient")
         self.confirm_button.setText("Update" if mode == "update" else "Add")
+        self._touched = set(self._fields) if mode == "update" else set()
         self.name_input.setText(name)
-        self.category_input.setText(category)
+        self.brand_input.setText(brand)
         self.cost_input.setText(cost)
         self.unit_input.setText(unit)
-        self._update_confirm_enabled()
+        if category_id is None:
+            default_index = self.category_input.findText(DEFAULT_CATEGORY)
+            self.category_input.setCurrentIndex(default_index if default_index >= 0 else 0)
+        else:
+            self.category_input.setCurrentIndex(max(0, self.category_input.findData(category_id)))
+        self._update_field_styles()
+
+    def _field_valid(self, field):
+        if field == "cost":
+            try:
+                return float(self.cost_input.raw_text()) >= 0.01
+            except ValueError:
+                return False
+        return bool(self._fields[field].text().strip())
+
+    def _handle_field_changed(self, field):
+        self._touched.add(field)
+        self._update_field_styles()
+
+    def _update_field_styles(self):
+        for field, widget in self._fields.items():
+            if field not in self._touched:
+                widget.setStyleSheet("")
+            else:
+                widget.setStyleSheet(VALID_BORDER if self._field_valid(field) else INVALID_BORDER)
+        self.confirm_button.setEnabled(all(self._field_valid(field) for field in self._fields))
 
     def _handle_confirm(self):
+        if not all(self._field_valid(field) for field in self._fields):
+            QMessageBox.warning(self, "Missing fields", "Name, brand, cost per unit, and unit are required.")
+            return
+
         name = self.name_input.text().strip()
-        category = self.category_input.text().strip()
+        brand = self.brand_input.text().strip()
+        category_id = self.category_input.currentData()
         unit = self.unit_input.text().strip()
-        cost_text = self.cost_input.text().strip()
+        cost = float(self.cost_input.raw_text())
 
-        if not name or not unit or not cost_text:
-            QMessageBox.warning(self, "Missing fields", "Name, cost per unit, and unit are required.")
-            return
-        try:
-            cost = float(cost_text)
-        except ValueError:
-            QMessageBox.warning(self, "Invalid cost", "Cost per unit must be a number.")
-            return
-
-        self.values = (name, category, cost, unit)
+        self.values = (name, brand, category_id, cost, unit)
         self.accept()
-
-    def _update_confirm_enabled(self):
-        ready = bool(
-            self.name_input.text().strip()
-            and self.cost_input.text().strip()
-            and self.unit_input.text().strip()
-        )
-        self.confirm_button.setEnabled(ready)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -165,13 +228,14 @@ class IngredientScreen(QWidget):
         self.shade.setGeometry(self.rect())
 
     def refresh(self):
-        ingredients = ingredient_repository.get_all_ingredients()
-        self.table.setRowCount(len(ingredients))
-        for row, ingredient in enumerate(ingredients):
+        self._ingredients = ingredient_repository.get_all_ingredients()
+        self.table.setRowCount(len(self._ingredients))
+        for row, ingredient in enumerate(self._ingredients):
             self.table.setItem(row, 0, QTableWidgetItem(ingredient.name))
-            self.table.setItem(row, 1, QTableWidgetItem(ingredient.category or ""))
-            self.table.setItem(row, 2, QTableWidgetItem(f"{ingredient.cost_per_unit:.4f}"))
-            self.table.setItem(row, 3, QTableWidgetItem(ingredient.unit))
+            self.table.setItem(row, 1, QTableWidgetItem(ingredient.brand))
+            self.table.setItem(row, 2, QTableWidgetItem(ingredient.category))
+            self.table.setItem(row, 3, QTableWidgetItem(f"${ingredient.cost_per_unit:.2f}"))
+            self.table.setItem(row, 4, QTableWidgetItem(ingredient.unit))
             self.table.item(row, 0).setData(Qt.UserRole, ingredient.id)
 
     def _on_row_selected(self):
@@ -194,13 +258,15 @@ class IngredientScreen(QWidget):
         if self._selected_id is None:
             return
         row = self.table.selectionModel().selectedRows()[0].row()
+        ingredient = self._ingredients[row]
         dialog = IngredientFormDialog(self)
         dialog.set_mode(
             "update",
-            name=self.table.item(row, 0).text(),
-            category=self.table.item(row, 1).text(),
-            cost=self.table.item(row, 2).text(),
-            unit=self.table.item(row, 3).text(),
+            name=ingredient.name,
+            brand=ingredient.brand,
+            category_id=ingredient.category_id,
+            cost=f"${ingredient.cost_per_unit:.2f}",
+            unit=ingredient.unit,
         )
         self._run_dialog(dialog)
 

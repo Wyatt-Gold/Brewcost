@@ -1,3 +1,3 @@
 UPDATE ingredients
-SET name = ?, category = ?, cost_per_unit = ?, unit = ?
+SET name = ?, brand = ?, category_id = ?, cost_per_unit = ?, unit = ?
 WHERE id = ?
