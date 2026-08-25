@@ -11,8 +11,10 @@ SQLite under the hood, it should run the same way on Windows or Linux.
 
 ## What it does today
 
-- **Ingredients tab**: add, update, and delete ingredients (name, category, cost per unit,
-  unit of measure). This is the only data that's actually saved to the database right now.
+- **Ingredients tab**: add, update, and delete ingredients (name, brand, category, cost per
+  unit, unit of measure). Category is picked from a fixed, extensible list (Syrup, Add-on,
+  Extra by default) rather than typed freely. This is the only data that's actually saved to
+  the database right now.
 - **Calculator tab**: a live scratchpad for building out a drink: pick ingredients, enter how
   much of each goes into a few different size options, and see the total cost update as you go.
   This screen doesn't save anything yet. It resets each time you leave it. Saving recipes is
@@ -32,13 +34,16 @@ Brewcost/
   database/
     connection.py                # opens brewcost.db, creates tables, small SQL-file loader
     ingredient_repository.py     # everything about the "ingredients" table lives here
+    categories_repository.py     # read-only lookup for the "categories" table
     sql/
-      schema.sql                 # every CREATE TABLE statement
+      schema.sql                 # every CREATE TABLE statement, plus seed category rows
       ingredients/                # one .sql file per query (insert, select, update, delete)
+      categories/                 # one .sql file per query (select_all)
   ui/
     main_window.py                # app shell / tab switcher
     ingredient_screen.py          # the Ingredients tab
     calculator_screen.py          # the Calculator tab
+  tests/                          # pytest suite, mirrors the database/ and ui/ layout above
   requirements.txt
   brewcost.db                     # your local data, not checked into git
 ```
@@ -70,6 +75,16 @@ venv\Scripts\python.exe main.py
 
 `brewcost.db` and the tables in it are created automatically the first time it runs, so a fresh
 clone starts with an empty database.
+
+## Running the tests
+
+```
+venv/bin/python3 -m pytest
+```
+
+Tests live in `tests/`, mirroring the `database/` and `ui/` packages they cover. Repository
+tests run against a throwaway temp-file SQLite database (never `brewcost.db`); UI tests run
+headless (`QT_QPA_PLATFORM=offscreen`, set automatically) so no window actually opens.
 
 ## What's next
 

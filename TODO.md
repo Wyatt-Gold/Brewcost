@@ -5,13 +5,6 @@ tackled as its own commit/work session.
 
 ## Ingredients Tab
 
-- Add a `brand` field for ingredients, and restrict `category` to a predefined list instead of
-  free text (for now: Syrups, Add-ons, Extras). Both change what's stored for an ingredient, so
-  they touch the same schema/repository/form code.
-- Tighten up the add/update form: block null/empty required fields, cap free-text fields at
-  100 characters, restrict numeric fields (e.g. cost per unit) to numbers only, give live
-  red/green feedback on each field as it becomes valid/invalid, and only allow submitting once
-  all required fields are filled in.
 - Add a "bulk import" button that accepts a CSV of ingredients. Validate that all required
   columns are present (and no extra ones); if a row is missing data, skip it and tell the user
   which row/columns were the problem instead of silently failing.
@@ -41,11 +34,8 @@ tackled as its own commit/work session.
 Goal: catch breakage automatically before it lands on `main`, instead of finding out after the
 fact.
 
-- Add a `pytest` test suite for the database/repository layer (`ingredient_repository` and
-  friends), since it's pure Python/SQL and doesn't need a Qt display to test — e.g. add an
-  ingredient, confirm it round-trips through `get_all_ingredients`, update it, delete it, using a
-  temporary SQLite file (or `:memory:`) instead of the real `brewcost.db`. Add `pytest` (and any
-  test-only tools) to `requirements.txt`, or split into a `requirements-dev.txt`.
+- ~~Add a `pytest` test suite for the database/repository layer~~ — done, see `tests/`. Also
+  covers the ingredient form and calculator screens (headless, via `QT_QPA_PLATFORM=offscreen`).
 - Add a `.github/workflows/ci.yml` GitHub Actions workflow that runs that test suite on every
   push and pull request, optionally with a linter/formatter step (e.g. `ruff`) alongside it. Then,
   in the GitHub repo settings, turn on branch protection for `main` requiring that workflow to
