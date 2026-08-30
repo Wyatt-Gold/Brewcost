@@ -5,9 +5,6 @@ tackled as its own commit/work session.
 
 ## Ingredients Tab
 
-- Add a "bulk import" button that accepts a CSV of ingredients. Validate that all required
-  columns are present (and no extra ones); if a row is missing data, skip it and tell the user
-  which row/columns were the problem instead of silently failing.
 - Add a filter feature for Brand and Category, plus a fuzzy search box for ingredient name. Each
   filter should only list values that actually exist in the database (and ideally show how many
   entries match each one). Do this after the `brand` field above exists, since filtering by brand
@@ -15,9 +12,6 @@ tackled as its own commit/work session.
 
 ## Calculator Screen
 
-- Give each drink size its own fixed box in the calculator (no adding/removing sizes, instead default
-  to 3: 12oz, 16oz, and 20oz), and make sure adding an ingredient row applies it to every size at
-  once rather than just one.
 - Add two calculated values: the actual food cost, and a recommended selling price (calculated so
   food cost lands around 30% of the recommended price).
 

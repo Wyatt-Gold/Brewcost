@@ -1,3 +1,5 @@
+import pytest
+
 from database import categories_repository, ingredient_repository
 
 
@@ -27,3 +29,60 @@ def test_add_update_delete_roundtrip(temp_db):
 
     ingredient_repository.delete_ingredient(ingredient.id)
     assert ingredient_repository.get_all_ingredients() == []
+
+
+def test_import_valid_csv(temp_db, tmp_path):
+    csv_path = tmp_path / "ingredients.csv"
+    csv_path.write_text(
+        "name,brand,category,cost_per_unit,unit\n"
+        "Vanilla Syrup,Torani,syrup,12.5,oz\n"
+        "Whipped Cream,Reddi-wip,Extra,3.0,can\n"
+    )
+
+    added, skipped = ingredient_repository.import_ingredients_from_csv(csv_path)
+
+    assert added == 2
+    assert skipped == []
+    names = {i.name for i in ingredient_repository.get_all_ingredients()}
+    assert names == {"Vanilla Syrup", "Whipped Cream"}
+
+
+def test_import_rejects_missing_column(temp_db, tmp_path):
+    csv_path = tmp_path / "ingredients.csv"
+    csv_path.write_text("name,brand,category,unit\nVanilla Syrup,Torani,Syrup,oz\n")
+
+    with pytest.raises(ingredient_repository.CSVFormatError):
+        ingredient_repository.import_ingredients_from_csv(csv_path)
+    assert ingredient_repository.get_all_ingredients() == []
+
+
+def test_import_rejects_extra_column(temp_db, tmp_path):
+    csv_path = tmp_path / "ingredients.csv"
+    csv_path.write_text(
+        "name,brand,category,cost_per_unit,unit,notes\n"
+        "Vanilla Syrup,Torani,Syrup,12.5,oz,tasty\n"
+    )
+
+    with pytest.raises(ingredient_repository.CSVFormatError):
+        ingredient_repository.import_ingredients_from_csv(csv_path)
+    assert ingredient_repository.get_all_ingredients() == []
+
+
+def test_import_skips_invalid_rows(temp_db, tmp_path):
+    csv_path = tmp_path / "ingredients.csv"
+    csv_path.write_text(
+        "name,brand,category,cost_per_unit,unit\n"
+        "Vanilla Syrup,Torani,Syrup,12.5,oz\n"
+        "Mystery Item,Torani,NotACategory,4.0,oz\n"
+        ",Torani,Syrup,4.0,oz\n"
+        "Bad Cost,Torani,Syrup,not-a-number,oz\n"
+    )
+
+    added, skipped = ingredient_repository.import_ingredients_from_csv(csv_path)
+
+    assert added == 1
+    assert skipped == [
+        (3, ["category"]),
+        (4, ["name"]),
+        (5, ["cost_per_unit"]),
+    ]

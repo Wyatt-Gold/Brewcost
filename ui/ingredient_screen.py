@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from database import categories_repository, ingredient_repository
+from ui.widgets import Toast
 
 DEFAULT_CATEGORY = "Syrup"
 COST_LABEL = "Cost/Unit ($)"
@@ -187,6 +189,12 @@ class IngredientScreen(QWidget):
         super().__init__()
         self._selected_id = None
 
+        self.import_button = QPushButton("Import CSV")
+        self.import_button.clicked.connect(self._handle_bulk_import)
+        top_row = QHBoxLayout()
+        top_row.addStretch()
+        top_row.addWidget(self.import_button)
+
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -211,6 +219,7 @@ class IngredientScreen(QWidget):
         button_row.addWidget(self.delete_button)
 
         layout = QVBoxLayout()
+        layout.addLayout(top_row)
         layout.addWidget(self.table)
         layout.addLayout(button_row)
         self.setLayout(layout)
@@ -293,3 +302,19 @@ class IngredientScreen(QWidget):
         self.refresh()
         self.table.clearSelection()
         self._selected_id = None
+
+    def _handle_bulk_import(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Import Ingredients", "", "CSV Files (*.csv)")
+        if not path:
+            return
+        try:
+            added, skipped = ingredient_repository.import_ingredients_from_csv(path)
+        except ingredient_repository.CSVFormatError as error:
+            Toast(self, "Wrong Format", str(error), "error")
+            return
+
+        self.refresh()
+        Toast(self, "Import Successful", f"Imported {added} ingredient(s).", "success")
+        if skipped:
+            lines = [f"Row {row}: {', '.join(columns)}" for row, columns in skipped]
+            Toast(self, "Some Rows Were Skipped", "\n".join(lines), "warning")
