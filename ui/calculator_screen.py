@@ -1,12 +1,13 @@
-# Calculator screen: lets the user add ingredients and sizes, enter quantities, and see the total cost for each size.
+# Calculator screen: lets the user add ingredients, enter a quantity per fixed drink size, and see the total cost for each size.
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
-    QInputDialog,
+    QLabel,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -18,7 +19,14 @@ from PySide6.QtWidgets import (
 from database import ingredient_repository
 
 INGREDIENT_COLUMN = 0
-TOTAL_ROW_LABEL = "Total Cost"
+QUANTITY_COLUMN = 1
+SIZE_LABELS = ["12oz", "16oz", "20oz"]
+
+GROUP_BOX_STYLE = (
+    "QGroupBox { border: 1px solid palette(mid); border-radius: 4px; margin-top: 10px; }"
+    "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }"
+)
+TOTAL_LABEL_STYLE = "border-top: 3px solid palette(mid); font-weight: bold; padding: 6px 2px 0 2px;"
 
 
 class CalculatorScreen(QWidget):
@@ -27,29 +35,48 @@ class CalculatorScreen(QWidget):
 
         self.ingredient_combo = QComboBox()
         self.add_ingredient_button = QPushButton("Add Ingredient Row")
-        self.add_size_button = QPushButton("Add Size Column")
         self.remove_row_button = QPushButton("Remove Selected Row")
 
         self.add_ingredient_button.clicked.connect(self._handle_add_ingredient_row)
-        self.add_size_button.clicked.connect(self._handle_add_size_column)
         self.remove_row_button.clicked.connect(self._handle_remove_row)
 
         controls = QHBoxLayout()
         controls.addWidget(self.ingredient_combo)
         controls.addWidget(self.add_ingredient_button)
-        controls.addWidget(self.add_size_button)
         controls.addWidget(self.remove_row_button)
 
-        self.table = QTableWidget(1, 2)
-        self.table.setHorizontalHeaderLabels(["Ingredient", "Size 1"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._set_total_row_label()
-        self.table.itemChanged.connect(self._handle_item_changed)
+        # One small table per fixed size, stacked smallest-to-largest. Rows stay in lockstep
+        # across tables (same ingredient at the same row index in each) so a row index found
+        # in one table is valid in all of them. The total is a label below the table, not a
+        # table row, so it stays pinned to the bottom of the box instead of moving as rows
+        # are added/removed.
+        self.tables = []
+        self.total_labels = []
+        boxes = QVBoxLayout()
+        for size_label in SIZE_LABELS:
+            table = QTableWidget(0, 2)
+            table.setHorizontalHeaderLabels(["Ingredient", "Quantity"])
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            table.setSelectionBehavior(QAbstractItemView.SelectRows)
+            table.itemChanged.connect(self._handle_item_changed)
+            self.tables.append(table)
+
+            total_label = QLabel("Total Cost: $0.00")
+            total_label.setStyleSheet(TOTAL_LABEL_STYLE)
+            self.total_labels.append(total_label)
+
+            box = QGroupBox(size_label)
+            box.setStyleSheet(GROUP_BOX_STYLE)
+            box_layout = QVBoxLayout()
+            box_layout.setContentsMargins(10, 14, 10, 10)
+            box_layout.addWidget(table)
+            box_layout.addWidget(total_label)
+            box.setLayout(box_layout)
+            boxes.addWidget(box)
 
         layout = QVBoxLayout()
         layout.addLayout(controls)
-        layout.addWidget(self.table)
+        layout.addLayout(boxes)
         self.setLayout(layout)
 
         self.refresh_ingredient_choices()
@@ -64,16 +91,7 @@ class CalculatorScreen(QWidget):
             label = f"{ingredient.name} ({ingredient.unit})"
             self.ingredient_combo.addItem(label, ingredient)
 
-    # -- row/column setup -----------------------------------------------------
-
-    def _total_row_index(self):
-        return self.table.rowCount() - 1
-
-    def _set_total_row_label(self):
-        row = self._total_row_index()
-        item = QTableWidgetItem(TOTAL_ROW_LABEL)
-        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-        self.table.setItem(row, INGREDIENT_COLUMN, item)
+    # -- row setup -------------------------------------------------------------
 
     def _handle_add_ingredient_row(self):
         ingredient = self.ingredient_combo.currentData()
@@ -81,76 +99,56 @@ class CalculatorScreen(QWidget):
             QMessageBox.information(self, "No ingredients", "Add ingredients on the Ingredients tab first.")
             return
 
-        total_row = self._total_row_index()
-        self.table.insertRow(total_row)
-        new_row = total_row
+        for table in self.tables:
+            new_row = table.rowCount()
+            table.insertRow(new_row)
 
-        name_item = QTableWidgetItem(f"{ingredient.name} ({ingredient.unit})")
-        name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
-        name_item.setData(Qt.UserRole, ingredient)
+            name_item = QTableWidgetItem(f"{ingredient.name} ({ingredient.unit})")
+            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+            name_item.setData(Qt.UserRole, ingredient)
 
-        self.table.blockSignals(True)
-        self.table.setItem(new_row, INGREDIENT_COLUMN, name_item)
-        for col in range(1, self.table.columnCount()):
-            self.table.setItem(new_row, col, QTableWidgetItem("0"))
-        self.table.blockSignals(False)
+            table.blockSignals(True)
+            table.setItem(new_row, INGREDIENT_COLUMN, name_item)
+            table.setItem(new_row, QUANTITY_COLUMN, QTableWidgetItem("0"))
+            table.blockSignals(False)
 
-        self._recalculate()
+            self._recalculate(table)
 
     def _handle_remove_row(self):
-        selected_rows = self.table.selectionModel().selectedRows()
-        if not selected_rows:
+        row = None
+        for table in self.tables:
+            selected_rows = table.selectionModel().selectedRows()
+            if selected_rows:
+                row = selected_rows[0].row()
+                break
+
+        if row is None:
             QMessageBox.information(self, "No selection", "Select an ingredient row to remove.")
             return
-        row = selected_rows[0].row()
-        if row == self._total_row_index():
-            QMessageBox.information(self, "Can't remove", "That's the totals row.")
-            return
-        self.table.removeRow(row)
-        self._recalculate()
 
-    def _handle_add_size_column(self):
-        label, ok = QInputDialog.getText(self, "Add Size Column", "Size label (e.g. 16oz):")
-        if not ok or not label.strip():
-            return
-
-        col = self.table.columnCount()
-        self.table.insertColumn(col)
-        self.table.setHorizontalHeaderItem(col, QTableWidgetItem(label.strip()))
-
-        self.table.blockSignals(True)
-        for row in range(self.table.rowCount()):
-            if row == self._total_row_index():
-                continue
-            self.table.setItem(row, col, QTableWidgetItem("0"))
-        self.table.blockSignals(False)
-
-        self._recalculate()
+        for table in self.tables:
+            table.removeRow(row)
+            self._recalculate(table)
 
     # -- live totals ------------------------------------------------------------
 
     def _handle_item_changed(self, item):
-        if item.row() == self._total_row_index():
-            return
         if item.column() == INGREDIENT_COLUMN:
             return
-        self._recalculate()
+        self._recalculate(item.tableWidget())
 
-    def _recalculate(self):
-        total_row = self._total_row_index()
-        self.table.blockSignals(True)
-        for col in range(1, self.table.columnCount()):
-            total_cost = 0.0
-            for row in range(total_row):
-                name_item = self.table.item(row, INGREDIENT_COLUMN)
-                quantity_item = self.table.item(row, col)
-                if name_item is None or quantity_item is None:
-                    continue
-                ingredient = name_item.data(Qt.UserRole)
-                quantity = _safe_float(quantity_item.text())
-                total_cost += quantity * ingredient.cost_per_unit
-            self.table.setItem(total_row, col, QTableWidgetItem(f"${total_cost:.2f}"))
-        self.table.blockSignals(False)
+    def _recalculate(self, table):
+        total_label = self.total_labels[self.tables.index(table)]
+        total_cost = 0.0
+        for row in range(table.rowCount()):
+            name_item = table.item(row, INGREDIENT_COLUMN)
+            quantity_item = table.item(row, QUANTITY_COLUMN)
+            if name_item is None or quantity_item is None:
+                continue
+            ingredient = name_item.data(Qt.UserRole)
+            quantity = _safe_float(quantity_item.text())
+            total_cost += quantity * ingredient.cost_per_unit
+        total_label.setText(f"Total Cost: ${total_cost:.2f}")
 
 
 def _safe_float(text):

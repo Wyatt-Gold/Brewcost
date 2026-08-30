@@ -10,7 +10,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Brewcost")
-        self.resize(900, 600)
+        self.resize(1100, 850)
 
         self.ingredient_screen = IngredientScreen()
         self.calculator_screen = CalculatorScreen()
